@@ -52,6 +52,13 @@ version must support the properties you configure.
 after apply, and ignored configuration is not sent to Azure until the path is
 removed.
 
+## Usage example
+
+The [common-name certificate example](./examples/default/README.md) creates a
+regular cluster using existing networking, three Windows nodes, and certificates.
+It includes administrator client authorization and a reverse-proxy certificate.
+It does not deploy or validate the supporting infrastructure.
+
 ## Integration tests
 
 The real-Azure suite deploys two scenarios sequentially: thumbprint-based
