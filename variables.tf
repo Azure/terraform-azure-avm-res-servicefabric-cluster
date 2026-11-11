@@ -344,7 +344,7 @@ variable "reverse_proxy_certificate_common_names" {
   type = object({
     common_names = list(object({
       certificate_common_name       = string
-      certificate_issuer_thumbprint = string
+      certificate_issuer_thumbprint = optional(string)
     }))
     x509_store_name = optional(string, "My")
   })
@@ -352,7 +352,7 @@ variable "reverse_proxy_certificate_common_names" {
   description = <<DESCRIPTION
 Optional reverse-proxy server certificates referenced by common name, as an alternative to `reverse_proxy_certificate`. Certificates must be installed on the nodes; configure the reverse-proxy port separately in `node_types`.
 
-- `common_names` - Non-empty list of certificate entries containing `certificate_common_name` and `certificate_issuer_thumbprint`.
+- `common_names` - Non-empty list of entries requiring `certificate_common_name`. `certificate_issuer_thumbprint` is optional; omit it because the current Azure API rejects issuer thumbprints on reverse-proxy certificates.
 - `x509_store_name` - Local certificate store, defaulting to My.
 DESCRIPTION
 

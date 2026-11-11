@@ -49,3 +49,67 @@ version must support the properties you configure.
 `ignore_body_changes` accepts body-relative dot paths. Changes take effect only
 after apply, and ignored configuration is not sent to Azure until the path is
 removed.
+
+## Integration tests
+
+The real-Azure suite deploys two scenarios sequentially: thumbprint-based
+certificates with a configuration update, and common-name certificates with
+reverse-proxy and upgrade-policy settings. Each scenario creates a three-node
+Bronze Windows cluster, a VM scale set, networking, a restricted Standard load
+balancer, and a Key Vault. These are billable resources, not mocked tests.
+There are five apply runs. Allow at least 90 minutes for the full suite, including
+cluster startup, configuration upgrades, health checks, and teardown.
+Use `avm test unit` for fast, Azure-free development checks.
+
+The setup hook generates a 45-day self-signed certificate and a random VM
+administrator password in an owner-restricted, git-ignored directory. The private
+material is passed only through AzAPI write-only bodies. The self-signed
+certificate is for isolated testing, not production.
+Its lifetime stays above the default certificate-expiry health-warning threshold.
+The server common-name declaration pins its issuer; reverse-proxy common-name
+declarations omit issuer thumbprints because Azure currently rejects them.
+The certificate secret is uploaded with an ARM PUT action and removed with its
+vault, because the ARM secret endpoint does not support DELETE.
+
+Authenticate to an approved Azure subscription with resource-group creation,
+Key Vault deployment, network, VM scale-set, and VM run-command permissions.
+Allow enough regional quota for three instances of the selected VM size.
+From PowerShell 7.4 or later, run:
+
+```powershell
+.\tests\integration\Invoke-IntegrationTests.ps1 `
+  -SubscriptionId '<approved-subscription-guid>' `
+  -ManagementSourcePrefix '<approved-runner-ip>/32' `
+  -Location 'westus3' `
+  -VmSku 'Standard_D2s_v5'
+```
+
+The wrapper verifies the selected subscription and invokes `avm test integration`.
+It removes generated local credentials on completion or failure. Guest-side
+certificate-authenticated checks require all three nodes to be Up and aggregate
+cluster health to be Ok within 20 minutes. When DNS is enabled, the checks also
+require `fabric:/System/DnsService` to report Ok health. DNS enablement is checked
+at runtime rather than through `addOnFeatures`, which Azure can omit from ARM
+readback. Fresh ARM reads verify the other persisted configuration; reapply checks
+preserve the Azure-generated cluster ID.
+These reapply checks do not claim a zero-change Terraform plan.
+
+Local PowerShell tests cover credential generation, private-file permissions,
+target selection, and cleanup without calling Azure. After `avm pre-commit`
+resolves the managed Pester tool, run them separately from `avm test unit`:
+
+```powershell
+Import-Module (avm tool which Pester --passthru).Path
+Invoke-Pester -Path .\tests\unit\IntegrationSetup.Tests.ps1
+```
+
+Managed CI can call `avm test integration` directly after setting
+`AVM_INTEGRATION_MANAGEMENT_CIDR` to an approved IPv4 CIDR.
+`AVM_INTEGRATION_LOCATION` and `AVM_INTEGRATION_VM_SKU` are optional overrides.
+When running without the wrapper, remove local credentials afterward with
+`pwsh -File .\tests\integration\setup.ps1 -Cleanup`.
+
+Terraform test tears down its Azure resources after each test file. If teardown
+fails, inspect its reported resource IDs and remove the remaining test resources
+before retrying. Deleted Key Vaults remain soft-deleted for seven days; unique
+scenario names avoid collisions. Examples and telemetry are not exercised.

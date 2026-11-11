@@ -249,8 +249,7 @@ run "reverse_proxy_common_names" {
     reverse_proxy_certificate_common_names = {
       common_names = [
         {
-          certificate_common_name       = "proxy.example.com"
-          certificate_issuer_thumbprint = "5123456789012345678901234567890123456789"
+          certificate_common_name = "proxy.example.com"
         },
         {
           certificate_common_name       = "proxy-next.example.com"
@@ -270,8 +269,8 @@ run "reverse_proxy_common_names" {
   }
 
   assert {
-    condition     = azapi_resource.this.body.properties.reverseProxyCertificateCommonNames.x509StoreName == "TrustedPeople" && length(azapi_resource.this.body.properties.reverseProxyCertificateCommonNames.commonNames) == 2 && azapi_resource.this.body.properties.reverseProxyCertificateCommonNames.commonNames[0].certificateCommonName == "proxy.example.com" && azapi_resource.this.body.properties.reverseProxyCertificateCommonNames.commonNames[1].certificateIssuerThumbprint == "6123456789012345678901234567890123456789" && !contains(keys(azapi_resource.this.body.properties), "reverseProxyCertificate")
-    error_message = "Reverse-proxy common names, issuer thumbprints, and the custom store must be mapped independently of the cluster server certificate."
+    condition     = azapi_resource.this.body.properties.reverseProxyCertificateCommonNames.x509StoreName == "TrustedPeople" && length(azapi_resource.this.body.properties.reverseProxyCertificateCommonNames.commonNames) == 2 && azapi_resource.this.body.properties.reverseProxyCertificateCommonNames.commonNames[0].certificateCommonName == "proxy.example.com" && azapi_resource.this.body.properties.reverseProxyCertificateCommonNames.commonNames[0].certificateIssuerThumbprint == null && azapi_resource.this.body.properties.reverseProxyCertificateCommonNames.commonNames[1].certificateIssuerThumbprint == "6123456789012345678901234567890123456789" && !contains(keys(azapi_resource.this.body.properties), "reverseProxyCertificate")
+    error_message = "Reverse-proxy common names must support omitting issuer thumbprints while preserving explicit values and the custom store."
   }
 }
 
