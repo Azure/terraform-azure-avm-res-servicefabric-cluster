@@ -1,0 +1,10 @@
+parent_id           = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-servicefabric"
+location            = "westus3"
+name                = "sf-common-name-example"
+management_endpoint = "https://sf.example.com:19080"
+
+certificate_common_name                         = "sf.example.com"
+certificate_issuer_thumbprint                   = "0123456789012345678901234567890123456789"
+admin_client_certificate_common_name            = "sf-admin.example.com"
+admin_client_certificate_issuer_thumbprint      = "1123456789012345678901234567890123456789"
+primary_node_type_name                          = "primary"
