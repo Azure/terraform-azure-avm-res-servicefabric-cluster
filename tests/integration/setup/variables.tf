@@ -41,6 +41,13 @@ variable "configure_optional_features" {
   nullable    = false
 }
 
+variable "enable_telemetry" {
+  type        = bool
+  default     = false
+  description = "Enable telemetry for the cluster module. Integration tests disable it by default."
+  nullable    = false
+}
+
 variable "ignore_body_changes" {
   type = object({
     resources_resource_groups          = optional(list(string), [])

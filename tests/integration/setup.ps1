@@ -47,7 +47,7 @@ function Get-IntegrationManagementSourcePrefix {
     if (-not [string]::IsNullOrWhiteSpace($ManagementSourcePrefix)) {
         return $ManagementSourcePrefix
     }
-    if ($env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_JOB -cne 'integration-test') {
+    if ($env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_JOB -cnotin @('integration-test', 'e2e-test')) {
         throw 'Set AVM_INTEGRATION_MANAGEMENT_CIDR to an approved runner IPv4 CIDR before provisioning integration resources.'
     }
 
@@ -92,6 +92,43 @@ function Remove-IntegrationMaterial {
     }
 }
 
+function Protect-IntegrationMaterial {
+    <#
+    .SYNOPSIS
+        Restrict a generated file or directory to its current owner.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$Path
+    )
+
+    $Item = Get-Item -LiteralPath $Path
+    if ($IsWindows) {
+        $Identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
+        $Acl = [System.IO.FileSystemAclExtensions]::GetAccessControl(
+            $Item, [System.Security.AccessControl.AccessControlSections]::Access
+        )
+        $Acl.SetAccessRuleProtection($true, $false)
+        foreach ($ExistingRule in $Acl.GetAccessRules($true, $false, [System.Security.Principal.SecurityIdentifier])) {
+            $Acl.RemoveAccessRuleSpecific($ExistingRule)
+        }
+        $Inheritance = if ($Item.PSIsContainer) { 'ContainerInherit,ObjectInherit' } else { 'None' }
+        $Rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
+            $Identity, 'FullControl', $Inheritance, 'None', 'Allow'
+        )
+        $Acl.AddAccessRule($Rule)
+        [System.IO.FileSystemAclExtensions]::SetAccessControl($Item, $Acl)
+    }
+    else {
+        $Mode = [System.IO.UnixFileMode]::UserRead -bor [System.IO.UnixFileMode]::UserWrite
+        if ($Item.PSIsContainer) {
+            $Mode = $Mode -bor [System.IO.UnixFileMode]::UserExecute
+        }
+        [System.IO.File]::SetUnixFileMode($Path, $Mode)
+    }
+}
+
 function New-IntegrationMaterial {
     <#
     .SYNOPSIS
@@ -124,26 +161,7 @@ function New-IntegrationMaterial {
     }
 
     New-Item -ItemType Directory -Path $OutputDirectory -Force | Out-Null
-    if ($IsWindows) {
-        $Identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
-        $Directory = [System.IO.DirectoryInfo]::new($OutputDirectory)
-        # Restrict only the DACL without requesting audit or ownership privileges.
-        $Acl = [System.IO.FileSystemAclExtensions]::GetAccessControl(
-            $Directory, [System.Security.AccessControl.AccessControlSections]::Access
-        )
-        $Acl.SetAccessRuleProtection($true, $false)
-        foreach ($ExistingRule in $Acl.GetAccessRules($true, $false, [System.Security.Principal.SecurityIdentifier])) {
-            $Acl.RemoveAccessRuleSpecific($ExistingRule)
-        }
-        $Rule = [System.Security.AccessControl.FileSystemAccessRule]::new(
-            $Identity, 'FullControl', 'ContainerInherit,ObjectInherit', 'None', 'Allow'
-        )
-        $Acl.AddAccessRule($Rule)
-        [System.IO.FileSystemAclExtensions]::SetAccessControl($Directory, $Acl)
-    }
-    else {
-        [System.IO.File]::SetUnixFileMode($OutputDirectory, [System.IO.UnixFileMode]::UserRead -bor [System.IO.UnixFileMode]::UserWrite -bor [System.IO.UnixFileMode]::UserExecute)
-    }
+    Protect-IntegrationMaterial -Path $OutputDirectory
 
     $Prefix = 'sfit' + [guid]::NewGuid().ToString('N').Substring(0, 10)
     $CommonName = "$Prefix.servicefabric.test"

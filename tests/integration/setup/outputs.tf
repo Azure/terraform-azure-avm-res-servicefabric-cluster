@@ -3,6 +3,11 @@ output "resource_id" {
   value       = module.cluster.resource_id
 }
 
+output "name" {
+  description = "Name of the deployed cluster."
+  value       = module.cluster.name
+}
+
 output "cluster_id" {
   description = "Azure-generated cluster identifier, used to detect accidental replacements."
   value       = module.cluster.cluster_id

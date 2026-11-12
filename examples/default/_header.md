@@ -1,64 +1,78 @@
 ---
-description: Common-name-secured regular Service Fabric cluster using existing infrastructure.
+description: Standalone common-name-secured regular Service Fabric cluster.
 ---
 
 # Common-name certificate example
 
-This example creates one regular `Microsoft.ServiceFabric/clusters` resource
-using AzAPI. It configures common-name server authentication, a separate
-administrator client certificate, DNS service, EncryptAndSign protection,
-and a common-name reverse-proxy certificate.
+This example deploys a three-node Bronze Windows Service Fabric cluster and its
+resource group, VM scale set, networking, Standard load balancer, and Key Vault.
+It reuses the repository's operational test configuration, which invokes the
+root cluster module and uses AzAPI for every Azure resource.
 
-## Existing infrastructure
+Common-name server authentication, administrator client authorization, DNS,
+EventStore, EncryptAndSign protection, reverse-proxy authentication, and a custom
+upgrade policy are enabled. A node-side check requires three Up nodes, Ok cluster
+health, and a healthy DNS service before deployment succeeds.
 
-Supply an existing resource group and the following separately managed resources:
+## Prerequisites
 
-* A three-instance Windows VM scale set with Bronze durability and a primary
-  Service Fabric node type matching `primary_node_type_name`.
-* Networking, DNS, a load balancer, and restricted access to ports 19000, 19080,
-  and 19081. The example uses application ports 20000-30000 and ephemeral ports
-  49152-65534; these must match the node and network configuration.
-* A server certificate installed with its private key in `LocalMachine/My` on
-  every node. Its DNS names must cover the HTTPS management endpoint.
-* An administrator client certificate and its private key, held by the client.
-  Supply its common name and issuer's public thumbprint to authorize it.
+Authenticate to an approved Azure subscription with resource-group, Key Vault
+deployment, network, VM scale-set, and VM run-command permissions. Allow quota
+for three `Standard_D2s_v5` instances in `westus3`, or set
+`AVM_INTEGRATION_LOCATION` and `AVM_INTEGRATION_VM_SKU` before running the hook.
 
-The server certificate is also used for the reverse proxy. Its reverse-proxy
-declaration omits issuer thumbprints because Azure currently rejects them.
-Issuer thumbprints are public certificate fingerprints, not private keys.
+Locally, set `AVM_INTEGRATION_MANAGEMENT_CIDR` to your approved runner IPv4 CIDR.
+The managed GitHub Actions `e2e-test` job discovers its runner IPv4 automatically
+and allows only that `/32`. Discovery failure stops the deployment.
 
-Configure the separately managed VM scale set's Service Fabric extension with
-the returned `cluster_endpoint`, the matching node type, and certificate settings.
-Creating the ARM cluster resource alone does not provision nodes or prove that
-the cluster is operational. This is a usage example with existing dependencies,
-not a self-contained unattended E2E deployment.
+> [!WARNING]
+> This example creates billable Azure resources. The generated self-signed
+> certificate and Bronze topology are for isolated testing, not production.
 
 ## Run the example
 
-From this directory, copy the sample settings:
+From the repository root, use PowerShell 7.4 or later and Avm.Authoring:
 
 ```powershell
-Copy-Item .\terraform.tfvars.example .\terraform.tfvars
+$env:AVM_INTEGRATION_MANAGEMENT_CIDR = '<approved-runner-ip>/32'
+avm test e2e --example default
 ```
 
-Replace every placeholder in `terraform.tfvars` with your existing infrastructure
-and certificate details. Do not put private keys, PFX contents, or passwords in
-this file. Authenticate to the intended subscription, then review and apply:
+The pre-hook generates unique names, a real 45-day certificate, and a random VM
+password in the owner-restricted, git-ignored `.generated` directory. The hook
+supplies them through `avm.generated.auto.tfvars.json`, also owner-restricted and
+git-ignored. Private values flow through ephemeral inputs into AzAPI write-only
+bodies. No external resource IDs or certificate inputs need to be supplied.
+
+The E2E runner applies the example, requires a no-change idempotency plan, then
+destroys all managed resources. The post-hook removes generated credentials
+after cleanup. Keep these files until destruction finishes; if resources remain
+in Terraform state, the post-hook fails and retains them for a destroy retry.
+
+For manual deployment, run these commands from this example directory after
+setting the same environment variables:
 
 ```powershell
+.\pre.ps1
 terraform init
-terraform plan -var-file=terraform.tfvars
-terraform apply -var-file=terraform.tfvars
+terraform plan
+terraform apply
+terraform destroy
+.\post.ps1
 ```
 
-Only the cluster resource is managed by this example. Destroying it leaves the
-existing resource group, nodes, network, and certificates untouched.
+Do not delete generated credentials or settings between apply and destroy. Remove any
+settings files for the former existing-infrastructure example before running
+this standalone configuration.
 
 ## CI policy planning
 
-The managed GitHub Actions `pr-check` job uses `pre.ps1` to copy the public
-sample settings into `policy.auto.tfvars` in its isolated policy staging
-directory. These illustrative values are for planning only; the job does not
-apply the example. The hook does not supply sample inputs to local runs,
-integration tests, or E2E deployment jobs. Those runs still require real
-existing-infrastructure inputs.
+Policy planning uses the same infrastructure configuration without deploying
+resources. In the managed `pr-check` job's isolated staging directory, the hook
+uses the documentation-only CIDR `192.0.2.1/32` when none is configured. This
+policy-only CIDR is not supplied to the E2E deployment job.
+
+Example-local APRL exceptions cover Uniform VMSS and disabled automatic repairs
+(Service Fabric requirements), plus the intentional regional Bronze topology
+and bounded load-balancer egress of this non-production test. The public IP still
+uses Standard SKU. These exceptions do not disable E2E or AVMSEC checks.

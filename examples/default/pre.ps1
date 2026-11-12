@@ -5,15 +5,16 @@
 
 <#
 .SYNOPSIS
-    Supplies illustrative inputs for the managed PR policy plan.
+    Prepare real certificate material for the standalone cluster example.
 .DESCRIPTION
-    Copies the public sample settings only in the managed pr-check job, which
-    plans the example in an isolated staging directory without applying it.
-    Local runs and deployment jobs must supply their own existing infrastructure.
+    Reuses the integration credential generator without provisioning Azure.
+    Keeps credentials stable until Terraform has destroyed the deployment.
 .EXAMPLE
     .\pre.ps1
 .NOTES
-    Invoked by Avm.Authoring before example policy planning.
+    Invoked by Avm.Authoring before policy planning and E2E deployment.
+    Uses the AVM_INTEGRATION_LOCATION, AVM_INTEGRATION_VM_SKU, and
+    AVM_INTEGRATION_MANAGEMENT_CIDR environment settings.
 #>
 
 [CmdletBinding()]
@@ -22,16 +23,46 @@ param()
 $ErrorActionPreference = 'Stop'
 
 if ($MyInvocation.InvocationName -ne '.') {
-    if ($env:GITHUB_ACTIONS -ceq 'true' -and $env:GITHUB_JOB -ceq 'pr-check') {
-        $Destination = Join-Path $PSScriptRoot 'policy.auto.tfvars'
-        if (Test-Path -LiteralPath $Destination) {
-            throw 'Refusing to overwrite existing policy.auto.tfvars settings.'
+    . (Join-Path $PSScriptRoot '..\..\tests\integration\setup.ps1')
+    $Directory = Join-Path $PSScriptRoot '.generated'
+    $PublicExists = Test-Path -LiteralPath (Join-Path $Directory 'public.json')
+    $PrivateExists = Test-Path -LiteralPath (Join-Path $Directory 'private.json')
+    $InputsPath = Join-Path $PSScriptRoot 'avm.generated.auto.tfvars.json'
+    if ((Test-Path -LiteralPath $InputsPath) -and -not ($PublicExists -and $PrivateExists)) {
+        throw 'Refusing to overwrite generated settings without their matching credential material.'
+    }
+    if ($PublicExists -or $PrivateExists) {
+        if (-not ($PublicExists -and $PrivateExists)) {
+            throw 'Incomplete example credentials. Preserve existing material until all Azure resources have been destroyed.'
         }
-
-        Copy-Item -LiteralPath (Join-Path $PSScriptRoot 'terraform.tfvars.example') -Destination $Destination
-        Write-Host 'Prepared illustrative inputs for the PR policy plan only. No Azure resources were deployed.'
+        Write-Host 'Reusing existing example credentials until Terraform cleanup completes.'
     }
     else {
-        Write-Host 'Policy sample inputs are disabled outside the managed PR-check job. Supply existing-infrastructure inputs.'
+        $Prefix = $env:AVM_INTEGRATION_MANAGEMENT_CIDR
+        if ([string]::IsNullOrWhiteSpace($Prefix) -and $env:GITHUB_ACTIONS -ceq 'true' -and $env:GITHUB_JOB -ceq 'pr-check') {
+            $Prefix = '192.0.2.1/32'
+        }
+        $Prefix = Get-IntegrationManagementSourcePrefix -ManagementSourcePrefix $Prefix
+        $Location = if ([string]::IsNullOrWhiteSpace($env:AVM_INTEGRATION_LOCATION)) { 'westus3' } else { $env:AVM_INTEGRATION_LOCATION }
+        $VmSku = if ([string]::IsNullOrWhiteSpace($env:AVM_INTEGRATION_VM_SKU)) { 'Standard_D2s_v5' } else { $env:AVM_INTEGRATION_VM_SKU }
+        New-IntegrationMaterial -OutputDirectory $Directory -ManagementSourcePrefix $Prefix -Location $Location -VmSku $VmSku
+        Write-Host 'Prepared real, owner-restricted example credentials. No Azure resources were created by the hook.'
+    }
+
+    $Inputs = [ordered]@{
+        fixture_settings = Get-Content -LiteralPath (Join-Path $Directory 'public.json') -Raw | ConvertFrom-Json
+        fixture_secrets  = Get-Content -LiteralPath (Join-Path $Directory 'private.json') -Raw | ConvertFrom-Json
+    }
+    $Json = $Inputs | ConvertTo-Json -Depth 10 -Compress
+    if (Test-Path -LiteralPath $InputsPath) {
+        $Existing = Get-Content -LiteralPath $InputsPath -Raw | ConvertFrom-Json | ConvertTo-Json -Depth 10 -Compress
+        if ($Existing -cne $Json) {
+            throw 'Generated settings do not match the retained credential material. Refusing to overwrite them.'
+        }
+    }
+    else {
+        New-Item -ItemType File -Path $InputsPath | Out-Null
+        Protect-IntegrationMaterial -Path $InputsPath
+        Set-Content -LiteralPath $InputsPath -Value $Json -Encoding utf8
     }
 }

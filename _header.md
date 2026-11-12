@@ -17,6 +17,8 @@ diagnostics storage accounts must be provisioned separately.
 Supply exactly one server certificate configuration: `certificate` for
 thumbprint-based authentication or `certificate_common_names` for common-name
 authentication. Certificates must be installed on the cluster nodes.
+Issuer thumbprints are sent in lowercase to match Azure's canonical readback
+and avoid case-only updates.
 
 Node types are embedded properties of the regular cluster, not standalone ARM
 child resources. This module configures them but does not create virtual machines.
@@ -53,9 +55,11 @@ removed.
 ## Usage example
 
 The [common-name certificate example](./examples/default/README.md) creates a
-regular cluster using existing networking, three Windows nodes, and certificates.
-It includes administrator client authorization and a reverse-proxy certificate.
-It does not deploy or validate the supporting infrastructure.
+regular cluster together with networking, three Windows nodes, and short-lived
+test certificates. It includes administrator client authorization, a
+reverse-proxy certificate, and node-side health verification. Run
+`avm test e2e --example default` to deploy, check idempotency, and destroy the
+example and its dependencies.
 
 ## Integration tests
 
