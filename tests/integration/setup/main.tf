@@ -34,7 +34,7 @@ resource "azapi_resource" "vault" {
       enableRbacAuthorization   = false
       enableSoftDelete          = true
       softDeleteRetentionInDays = 7
-      publicNetworkAccess       = "Enabled"
+      publicNetworkAccess       = "Disabled"
       networkAcls = {
         bypass              = "AzureServices"
         defaultAction       = "Deny"
@@ -294,7 +294,7 @@ module "cluster" {
     certificate_thumbprint = local.settings.certificate_thumbprint
     is_admin               = true
   }]
-  enable_telemetry            = false
+  enable_telemetry            = var.enable_telemetry
   event_store_service_enabled = var.configure_optional_features
   fabric_settings = {
     Security = { ClusterProtectionLevel = "EncryptAndSign" }
