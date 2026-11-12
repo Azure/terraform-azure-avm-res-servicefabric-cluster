@@ -44,7 +44,7 @@ resource "azapi_resource" "this" {
         commonNames = [
           for certificate in var.certificate_common_names.common_names : {
             certificateCommonName       = certificate.certificate_common_name
-            certificateIssuerThumbprint = certificate.certificate_issuer_thumbprint
+            certificateIssuerThumbprint = certificate.certificate_issuer_thumbprint == null ? null : lower(certificate.certificate_issuer_thumbprint)
           }
         ]
         x509StoreName = var.certificate_common_names.x509_store_name
@@ -58,7 +58,7 @@ resource "azapi_resource" "this" {
         commonNames = [
           for certificate in var.reverse_proxy_certificate_common_names.common_names : {
             certificateCommonName       = certificate.certificate_common_name
-            certificateIssuerThumbprint = certificate.certificate_issuer_thumbprint
+            certificateIssuerThumbprint = certificate.certificate_issuer_thumbprint == null ? null : lower(certificate.certificate_issuer_thumbprint)
           }
         ]
         x509StoreName = var.reverse_proxy_certificate_common_names.x509_store_name
@@ -90,7 +90,7 @@ resource "azapi_resource" "this" {
       clientCertificateCommonNames = [
         for certificate in var.client_certificate_common_names : {
           certificateCommonName       = certificate.certificate_common_name
-          certificateIssuerThumbprint = certificate.certificate_issuer_thumbprint
+          certificateIssuerThumbprint = certificate.certificate_issuer_thumbprint == null ? null : lower(certificate.certificate_issuer_thumbprint)
           isAdmin                     = certificate.is_admin
         }
       ]
