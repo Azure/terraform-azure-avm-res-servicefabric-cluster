@@ -109,7 +109,7 @@ resolves the managed Pester tool, run them separately from `avm test unit`:
 
 ```powershell
 Import-Module (avm tool which Pester --passthru).Path
-Invoke-Pester -Path .\tests\unit\IntegrationSetup.Tests.ps1
+Invoke-Pester -Path .\tests\unit
 ```
 
 Managed CI can call `avm test integration` directly after setting
