@@ -106,6 +106,27 @@ Describe 'Standalone example lifecycle' -Tag 'Unit' {
         Should -Invoke Invoke-RestMethod -Times 0 -Exactly
     }
 
+    It 'Prepares and cleans the <Job> example with a hidden credential directory' -ForEach @(
+        @{ Job = 'pr-check' },
+        @{ Job = 'e2e-test' }
+    ) {
+        New-Item -ItemType Directory -Path $Directory | Out-Null
+        if ($IsWindows) {
+            [IO.File]::SetAttributes($Directory, [IO.File]::GetAttributes($Directory) -bor [IO.FileAttributes]::Hidden)
+        }
+        $env:AVM_INTEGRATION_MANAGEMENT_CIDR = $null
+        $env:GITHUB_ACTIONS = 'true'
+        $env:GITHUB_JOB = $Job
+
+        & $PreHook
+        Test-Path -LiteralPath $PrivatePath | Should -BeTrue
+        Test-Path -LiteralPath $InputsPath | Should -BeTrue
+        & $PostHook
+
+        Test-Path -LiteralPath $Directory | Should -BeFalse
+        Test-Path -LiteralPath $InputsPath | Should -BeFalse
+    }
+
     It 'Requires an approved CIDR for local deployment' {
         $env:AVM_INTEGRATION_MANAGEMENT_CIDR = $null
         { & $PreHook } | Should -Throw '*approved runner IPv4 CIDR*'

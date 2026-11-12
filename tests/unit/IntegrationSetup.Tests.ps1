@@ -68,6 +68,47 @@ Describe 'Integration certificate preparation' -Tag 'Unit' {
     }
 }
 
+Describe 'Hidden integration material paths' -Tag 'Unit' {
+    It 'Protects a hidden <Kind> with owner-only permissions' -ForEach @(
+        @{ Kind = 'directory'; ItemType = 'Directory'; Mode = 448 },
+        @{ Kind = 'file'; ItemType = 'File'; Mode = 384 }
+    ) {
+        $Path = Join-Path $TestDrive ('.generated-' + [guid]::NewGuid().ToString('N'))
+        New-Item -ItemType $ItemType -Path $Path | Out-Null
+        if ($IsWindows) {
+            [System.IO.File]::SetAttributes($Path, [System.IO.File]::GetAttributes($Path) -bor [System.IO.FileAttributes]::Hidden)
+        }
+
+        Protect-IntegrationMaterial -Path $Path
+
+        (Get-Item -LiteralPath $Path -Force).Attributes.HasFlag([System.IO.FileAttributes]::Hidden) | Should -BeTrue
+        if ($IsWindows) {
+            $Owner = [System.Security.Principal.WindowsIdentity]::GetCurrent().User.Value
+            $Acl = Get-Acl -LiteralPath $Path
+            $Acl.AreAccessRulesProtected | Should -BeTrue
+            $Acl.Access | Should -Not -BeNullOrEmpty
+            foreach ($Rule in $Acl.Access) {
+                $Rule.IdentityReference.Translate([System.Security.Principal.SecurityIdentifier]).Value | Should -Be $Owner
+            }
+        }
+        else {
+            [int][System.IO.File]::GetUnixFileMode($Path) | Should -Be $Mode
+        }
+    }
+
+    It 'Removes the empty hidden directory after cleaning known credential files' {
+        $Directory = Join-Path $TestDrive '.generated-cleanup'
+        New-IntegrationMaterial -OutputDirectory $Directory -ManagementSourcePrefix '192.0.2.1/32'
+        if ($IsWindows) {
+            [System.IO.File]::SetAttributes($Directory, [System.IO.File]::GetAttributes($Directory) -bor [System.IO.FileAttributes]::Hidden)
+        }
+
+        Remove-IntegrationMaterial -OutputDirectory $Directory
+
+        Test-Path -LiteralPath $Directory | Should -BeFalse
+    }
+}
+
 Describe 'Integration management source selection' -Tag 'Unit' {
     BeforeEach {
         $PreviousGitHubActions = $env:GITHUB_ACTIONS

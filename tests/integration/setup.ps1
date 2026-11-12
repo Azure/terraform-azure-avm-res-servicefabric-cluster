@@ -88,7 +88,7 @@ function Remove-IntegrationMaterial {
         }
     }
     if ((Test-Path -LiteralPath $OutputDirectory) -and @(Get-ChildItem -LiteralPath $OutputDirectory -Force).Count -eq 0) {
-        Remove-Item -LiteralPath $OutputDirectory
+        Remove-Item -LiteralPath $OutputDirectory -Force
     }
 }
 
@@ -103,7 +103,7 @@ function Protect-IntegrationMaterial {
         [string]$Path
     )
 
-    $Item = Get-Item -LiteralPath $Path
+    $Item = Get-Item -LiteralPath $Path -Force
     if ($IsWindows) {
         $Identity = [System.Security.Principal.WindowsIdentity]::GetCurrent().User
         $Acl = [System.IO.FileSystemAclExtensions]::GetAccessControl(
