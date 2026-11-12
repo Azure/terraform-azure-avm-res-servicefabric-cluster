@@ -53,3 +53,12 @@ terraform apply -var-file=terraform.tfvars
 
 Only the cluster resource is managed by this example. Destroying it leaves the
 existing resource group, nodes, network, and certificates untouched.
+
+## CI policy planning
+
+The managed GitHub Actions `pr-check` job uses `pre.ps1` to copy the public
+sample settings into `policy.auto.tfvars` in its isolated policy staging
+directory. These illustrative values are for planning only; the job does not
+apply the example. The hook does not supply sample inputs to local runs,
+integration tests, or E2E deployment jobs. Those runs still require real
+existing-infrastructure inputs.
