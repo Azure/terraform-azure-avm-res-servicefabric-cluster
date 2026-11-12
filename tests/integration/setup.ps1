@@ -10,6 +10,8 @@
     Creates an owner-restricted, git-ignored directory containing a 45-day
     self-signed certificate package and a random VM administrator password.
     Does not contact Azure. Avm.Authoring runs this hook before integration tests.
+    In the managed integration-test job, discovers the runner's public IPv4
+    through ipify when no management CIDR is configured.
 .PARAMETER Cleanup
     Remove only the two generated fixture files and their empty directory.
 .EXAMPLE
@@ -26,6 +28,47 @@ param(
 )
 
 $ErrorActionPreference = 'Stop'
+
+function Get-IntegrationManagementSourcePrefix {
+    <#
+    .SYNOPSIS
+        Resolve an explicit management CIDR or discover the CI runner IPv4 /32.
+    .PARAMETER ManagementSourcePrefix
+        An explicitly configured CIDR, which takes precedence over discovery.
+    .OUTPUTS
+        System.String
+    #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [string]$ManagementSourcePrefix
+    )
+
+    if (-not [string]::IsNullOrWhiteSpace($ManagementSourcePrefix)) {
+        return $ManagementSourcePrefix
+    }
+    if ($env:GITHUB_ACTIONS -cne 'true' -or $env:GITHUB_JOB -cne 'integration-test') {
+        throw 'Set AVM_INTEGRATION_MANAGEMENT_CIDR to an approved runner IPv4 CIDR before provisioning integration resources.'
+    }
+
+    try {
+        $Response = Invoke-RestMethod -Uri 'https://api.ipify.org?format=json' -TimeoutSec 15 -ErrorAction Stop
+    }
+    catch {
+        throw "Runner IPv4 discovery failed. Set AVM_INTEGRATION_MANAGEMENT_CIDR explicitly or retry. $($_.Exception.Message)"
+    }
+
+    $Address = $null
+    if (-not [System.Net.IPAddress]::TryParse([string]$Response.ip, [ref]$Address) -or
+        $Address.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork -or
+        $Address.Equals([System.Net.IPAddress]::Any) -or
+        [System.Net.IPAddress]::IsLoopback($Address)) {
+        throw 'Runner IPv4 discovery returned an invalid address. Set AVM_INTEGRATION_MANAGEMENT_CIDR explicitly or retry.'
+    }
+
+    Write-Host 'Detected the CI runner IPv4; management access is restricted to its /32 for this run.'
+    return "$($Address.IPAddressToString)/32"
+}
 
 function Remove-IntegrationMaterial {
     <#
@@ -72,8 +115,9 @@ function New-IntegrationMaterial {
     if ($Parts.Count -ne 2 -or
         -not [System.Net.IPAddress]::TryParse($Parts[0], [ref]$Address) -or
         $Address.AddressFamily -ne [System.Net.Sockets.AddressFamily]::InterNetwork -or
+        $Address.Equals([System.Net.IPAddress]::Any) -or
         $Parts[1] -notmatch '^(?:[1-9]|[12][0-9]|3[0-2])$') {
-        throw 'AVM_INTEGRATION_MANAGEMENT_CIDR must be a restricted IPv4 CIDR, not an unrestricted /0.'
+        throw 'AVM_INTEGRATION_MANAGEMENT_CIDR must be a restricted IPv4 CIDR, not an unspecified address or unrestricted /0.'
     }
     if ($Location -notmatch '^[a-z0-9]+$' -or [string]::IsNullOrWhiteSpace($VmSku)) {
         throw 'Supply a canonical Azure region name and a non-empty VM SKU.'
@@ -170,13 +214,11 @@ if ($MyInvocation.InvocationName -ne '.') {
             Remove-IntegrationMaterial -OutputDirectory $OutputDirectory
         }
         else {
-            if ([string]::IsNullOrWhiteSpace($env:AVM_INTEGRATION_MANAGEMENT_CIDR)) {
-                throw 'Set AVM_INTEGRATION_MANAGEMENT_CIDR to an approved runner IPv4 CIDR before provisioning integration resources.'
-            }
+            $ManagementSourcePrefix = Get-IntegrationManagementSourcePrefix -ManagementSourcePrefix $env:AVM_INTEGRATION_MANAGEMENT_CIDR
             $Location = if ([string]::IsNullOrWhiteSpace($env:AVM_INTEGRATION_LOCATION)) { 'westus3' } else { $env:AVM_INTEGRATION_LOCATION }
             $VmSku = if ([string]::IsNullOrWhiteSpace($env:AVM_INTEGRATION_VM_SKU)) { 'Standard_D2s_v5' } else { $env:AVM_INTEGRATION_VM_SKU }
             New-IntegrationMaterial -OutputDirectory $OutputDirectory `
-                -ManagementSourcePrefix $env:AVM_INTEGRATION_MANAGEMENT_CIDR `
+                -ManagementSourcePrefix $ManagementSourcePrefix `
                 -Location $Location `
                 -VmSku $VmSku
             Write-Host 'Prepared owner-restricted, 45-day test credentials. No Azure resources were created.'
