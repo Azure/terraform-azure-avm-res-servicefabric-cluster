@@ -375,9 +375,8 @@ variable "sf_zonal_upgrade_mode" {
 
 variable "tags" {
   type        = map(string)
-  default     = {}
-  description = "A map of tags to assign to the Service Fabric cluster."
-  nullable    = false
+  default     = null
+  description = "(Optional) Tags of the resource."
 }
 
 variable "timeouts" {
