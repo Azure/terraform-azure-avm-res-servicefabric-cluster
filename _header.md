@@ -110,8 +110,13 @@ Import-Module (avm tool which Pester --passthru).Path
 Invoke-Pester -Path .\tests\unit
 ```
 
-Managed CI can call `avm test integration` directly after setting
-`AVM_INTEGRATION_MANAGEMENT_CIDR` to an approved IPv4 CIDR.
+In the managed GitHub Actions `integration-test` job, setup discovers the
+runner's public IPv4 through <https://api.ipify.org> and restricts management
+access to that address's `/32` for the run. Set
+`AVM_INTEGRATION_MANAGEMENT_CIDR` to use an explicit approved IPv4 CIDR instead.
+Outside that CI job, an explicit CIDR is required. Discovery failures or invalid
+responses stop setup before any Azure resources are provisioned; there is no
+fallback to unrestricted access.
 `AVM_INTEGRATION_LOCATION` and `AVM_INTEGRATION_VM_SKU` are optional overrides.
 When running without the wrapper, remove local credentials afterward with
 `pwsh -File .\tests\integration\setup.ps1 -Cleanup`.

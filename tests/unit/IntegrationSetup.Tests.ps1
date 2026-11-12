@@ -49,6 +49,7 @@ Describe 'Integration certificate preparation' -Tag 'Unit' {
 
     It 'Rejects unsafe or invalid gateway source <Cidr>' -ForEach @(
         @{ Cidr = '0.0.0.0/0' },
+        @{ Cidr = '0.0.0.0/32' },
         @{ Cidr = 'not-an-address/32' },
         @{ Cidr = '192.0.2.1/33' },
         @{ Cidr = '::1/128' }
@@ -64,6 +65,78 @@ Describe 'Integration certificate preparation' -Tag 'Unit' {
         Test-Path (Join-Path $Directory 'private.json') | Should -BeFalse
         Test-Path (Join-Path $Directory 'public.json') | Should -BeFalse
         Test-Path (Join-Path $Directory 'keep.txt') | Should -BeTrue
+    }
+}
+
+Describe 'Integration management source selection' -Tag 'Unit' {
+    BeforeEach {
+        $PreviousGitHubActions = $env:GITHUB_ACTIONS
+        $PreviousGitHubJob = $env:GITHUB_JOB
+        $PreviousCidr = $env:AVM_INTEGRATION_MANAGEMENT_CIDR
+        $env:GITHUB_ACTIONS = 'true'
+        $env:GITHUB_JOB = 'integration-test'
+        $env:AVM_INTEGRATION_MANAGEMENT_CIDR = $null
+        Mock Invoke-RestMethod { [pscustomobject]@{ ip = '8.8.8.8' } }
+    }
+
+    AfterEach {
+        $env:GITHUB_ACTIONS = $PreviousGitHubActions
+        $env:GITHUB_JOB = $PreviousGitHubJob
+        $env:AVM_INTEGRATION_MANAGEMENT_CIDR = $PreviousCidr
+    }
+
+    It 'Preserves an explicit CIDR without calling the discovery service' {
+        Get-IntegrationManagementSourcePrefix -ManagementSourcePrefix '192.0.2.1/32' | Should -Be '192.0.2.1/32'
+        Should -Invoke Invoke-RestMethod -Times 0 -Exactly
+    }
+
+    It 'Does not automatically discover an address outside GitHub Actions' {
+        $env:GITHUB_ACTIONS = $null
+        { Get-IntegrationManagementSourcePrefix } | Should -Throw '*approved runner IPv4 CIDR*'
+        Should -Invoke Invoke-RestMethod -Times 0 -Exactly
+    }
+
+    It 'Does not automatically discover an address in the <Job> job' -ForEach @(
+        @{ Job = 'pr-check' },
+        @{ Job = 'e2e-execute' },
+        @{ Job = '' }
+    ) {
+        $env:GITHUB_JOB = $Job
+        { Get-IntegrationManagementSourcePrefix } | Should -Throw '*approved runner IPv4 CIDR*'
+        Should -Invoke Invoke-RestMethod -Times 0 -Exactly
+    }
+
+    It 'Restricts the detected runner IPv4 to exactly /32' {
+        Get-IntegrationManagementSourcePrefix | Should -Be '8.8.8.8/32'
+        Should -Invoke Invoke-RestMethod -Times 1 -Exactly -ParameterFilter {
+            $Uri -eq 'https://api.ipify.org?format=json' -and $TimeoutSec -eq 15
+        }
+    }
+
+    It 'Rejects an invalid discovery response <Address>' -ForEach @(
+        @{ Address = $null },
+        @{ Address = 'not-an-address' },
+        @{ Address = '2001:db8::1' },
+        @{ Address = '0.0.0.0' },
+        @{ Address = '127.0.0.1' }
+    ) {
+        Mock Invoke-RestMethod { [pscustomobject]@{ ip = $Address } }
+        { Get-IntegrationManagementSourcePrefix } | Should -Throw '*invalid address*'
+    }
+
+    It 'Surfaces lookup failures without falling back to broader access' {
+        Mock Invoke-RestMethod { throw 'Simulated timeout' }
+        { Get-IntegrationManagementSourcePrefix } | Should -Throw '*Runner IPv4 discovery failed*Simulated timeout*'
+    }
+
+    It 'Writes the detected /32 into the integration fixture metadata' {
+        $Directory = Join-Path $TestDrive 'ci-setup'
+        New-Item -ItemType Directory -Path $Directory | Out-Null
+        $Hook = Join-Path $Directory 'setup.ps1'
+        Copy-Item -LiteralPath (Join-Path $PSScriptRoot '..\integration\setup.ps1') -Destination $Hook
+        & $Hook
+        $Public = Get-Content -LiteralPath (Join-Path $Directory '.generated\public.json') -Raw | ConvertFrom-Json
+        $Public.management_source_prefix | Should -Be '8.8.8.8/32'
     }
 }
 
