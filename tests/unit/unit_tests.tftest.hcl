@@ -1,3 +1,5 @@
+mock_provider "random" {}
+
 mock_provider "azapi" {
   mock_resource "azapi_resource" {
     defaults = {
@@ -13,6 +15,16 @@ mock_provider "azapi" {
   mock_data "azapi_client_config" {
     defaults = {
       subscription_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000"
+    }
+  }
+  mock_data "azapi_resource_list" {
+    defaults = {
+      output = {
+        results = [{
+          id        = "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Authorization/roleDefinitions/acdd72a7-3385-48ef-bd42-f606fba81ae7"
+          role_name = "Reader"
+        }]
+      }
     }
   }
 }
@@ -93,6 +105,10 @@ run "cluster_defaults" {
   assert {
     condition     = output.cluster_endpoint == "https://westus3.servicefabric.azure.com/runtime/clusters/test" && output.cluster_id == "00000000-0000-0000-0000-000000000001"
     error_message = "Computed outputs must use the exported resource-provider endpoint and cluster identifier."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -240,6 +256,10 @@ run "optional_configuration" {
     condition     = azapi_resource.this.body.properties.upgradeDescription.healthPolicy.maxPercentUnhealthyApplications == 10 && azapi_resource.this.body.properties.upgradeDescription.healthPolicy.maxPercentUnhealthyNodes == 20 && azapi_resource.this.body.properties.upgradeDescription.deltaHealthPolicy.maxPercentDeltaUnhealthyApplications == 30 && azapi_resource.this.body.properties.upgradeDescription.deltaHealthPolicy.maxPercentDeltaUnhealthyNodes == 40 && azapi_resource.this.body.properties.upgradeDescription.deltaHealthPolicy.maxPercentUpgradeDomainDeltaUnhealthyNodes == 50
     error_message = "All cluster and delta health thresholds must map to the corresponding ARM percentage properties."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "reverse_proxy_common_names" {
@@ -272,6 +292,10 @@ run "reverse_proxy_common_names" {
     condition     = azapi_resource.this.body.properties.reverseProxyCertificateCommonNames.x509StoreName == "TrustedPeople" && length(azapi_resource.this.body.properties.reverseProxyCertificateCommonNames.commonNames) == 2 && azapi_resource.this.body.properties.reverseProxyCertificateCommonNames.commonNames[0].certificateCommonName == "proxy.example.com" && azapi_resource.this.body.properties.reverseProxyCertificateCommonNames.commonNames[0].certificateIssuerThumbprint == null && azapi_resource.this.body.properties.reverseProxyCertificateCommonNames.commonNames[1].certificateIssuerThumbprint == "6123456789012345678901234567890123456789" && !contains(keys(azapi_resource.this.body.properties), "reverseProxyCertificate")
     error_message = "Reverse-proxy common names must support omitting issuer thumbprints while preserving explicit values and the custom store."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "upgrade_policy_defaults" {
@@ -289,6 +313,10 @@ run "upgrade_policy_defaults" {
   assert {
     condition     = azapi_resource.this.body.properties.upgradeDescription.healthPolicy.maxPercentUnhealthyApplications == 0 && azapi_resource.this.body.properties.upgradeDescription.healthPolicy.maxPercentUnhealthyNodes == 0 && azapi_resource.this.body.properties.upgradeDescription.deltaHealthPolicy == null
     error_message = "The required health policy must default to zero thresholds, with no delta health policy configured."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
 
@@ -309,6 +337,10 @@ run "upgrade_policy_percentage_boundaries" {
     condition     = azapi_resource.this.body.properties.upgradeDescription.healthPolicy.maxPercentUnhealthyApplications == 100 && azapi_resource.this.body.properties.upgradeDescription.healthPolicy.maxPercentUnhealthyNodes == 0 && azapi_resource.this.body.properties.upgradeDescription.deltaHealthPolicy.maxPercentDeltaUnhealthyApplications == 0 && azapi_resource.this.body.properties.upgradeDescription.deltaHealthPolicy.maxPercentDeltaUnhealthyNodes == 0 && azapi_resource.this.body.properties.upgradeDescription.deltaHealthPolicy.maxPercentUpgradeDomainDeltaUnhealthyNodes == 0
     error_message = "Health percentage boundaries must be accepted and an empty delta policy must default all required thresholds to zero."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "api_version_override" {
@@ -324,6 +356,175 @@ run "api_version_override" {
     condition     = azapi_resource.this.type == var.resource_types.servicefabric_clusters
     error_message = "The resource type must come from the consumer's API-version override."
   }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
+}
+
+run "no_extension_resources_by_default" {
+  command = apply
+
+  assert {
+    condition     = length(azapi_resource.lock) == 0 && length(azapi_resource.role_assignments) == 0
+    error_message = "The module must not create a lock or role assignments unless requested."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
+}
+
+run "lock_and_role_assignments" {
+  command = apply
+
+  variables {
+    lock = {
+      kind  = "CanNotDelete"
+      name  = "lock-sf-test"
+      notes = "Prevents accidental deletion."
+    }
+    role_assignments = {
+      reader = {
+        name                       = "11111111-1111-1111-1111-111111111111"
+        role_definition_id_or_name = "Reader"
+        principal_id               = "22222222-2222-2222-2222-222222222222"
+        description                = "Read access."
+        principal_type             = "ServicePrincipal"
+      }
+      by_id = {
+        role_definition_id_or_name = "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c"
+        principal_id               = "33333333-3333-3333-3333-333333333333"
+      }
+    }
+    retry = {
+      error_message_regex = ["ScopeLocked"]
+      interval_seconds    = 7
+    }
+    timeouts = {
+      delete = "20m"
+    }
+  }
+
+  assert {
+    condition     = azapi_resource.lock[0].type == "Microsoft.Authorization/locks@2020-05-01" && azapi_resource.lock[0].name == "lock-sf-test" && azapi_resource.lock[0].parent_id == azapi_resource.this.id
+    error_message = "The lock must be created on the cluster with the supplied name."
+  }
+
+  assert {
+    condition     = azapi_resource.lock[0].body.properties.level == "CanNotDelete" && azapi_resource.lock[0].body.properties.notes == "Prevents accidental deletion."
+    error_message = "The lock level and notes must be sent to Azure."
+  }
+
+  assert {
+    condition     = azapi_resource.role_assignments["reader"].type == "Microsoft.Authorization/roleAssignments@2022-04-01" && azapi_resource.role_assignments["reader"].name == "11111111-1111-1111-1111-111111111111" && azapi_resource.role_assignments["reader"].parent_id == azapi_resource.this.id
+    error_message = "Role assignments must be created on the cluster using the supplied name."
+  }
+
+  assert {
+    condition     = azapi_resource.role_assignments["reader"].body.properties.roleDefinitionId == "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Authorization/roleDefinitions/acdd72a7-3385-48ef-bd42-f606fba81ae7" && azapi_resource.role_assignments["reader"].body.properties.principalId == "22222222-2222-2222-2222-222222222222" && azapi_resource.role_assignments["reader"].body.properties.principalType == "ServicePrincipal"
+    error_message = "A role name must resolve to its role definition ID and retain the principal settings."
+  }
+
+  assert {
+    condition     = azapi_resource.role_assignments["by_id"].body.properties.roleDefinitionId == var.role_assignments["by_id"].role_definition_id_or_name && length(azapi_resource.role_assignments["by_id"].name) > 0 && azapi_resource.role_assignments["by_id"].name != azapi_resource.role_assignments["reader"].name
+    error_message = "A role definition ID must be used as supplied and an omitted assignment name must be generated."
+  }
+
+  assert {
+    condition     = azapi_resource.lock[0].retry.interval_seconds == 7 && azapi_resource.role_assignments["reader"].retry.interval_seconds == 7
+    error_message = "Retry settings must apply to the lock and role assignments."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
+}
+
+run "generated_lock_name_and_api_overrides" {
+  command = apply
+
+  variables {
+    lock = {
+      kind = "ReadOnly"
+    }
+    resource_types = {
+      authorization_locks            = "Microsoft.Authorization/locks@2017-04-01"
+      authorization_role_assignments = "Microsoft.Authorization/roleAssignments@2020-04-01-preview"
+    }
+    role_assignments = {
+      by_id = {
+        role_definition_id_or_name = "/subscriptions/00000000-0000-0000-0000-000000000000/providers/Microsoft.Authorization/roleDefinitions/b24988ac-6180-42a0-ab88-20f7382dd24c"
+        principal_id               = "33333333-3333-3333-3333-333333333333"
+      }
+    }
+  }
+
+  assert {
+    condition     = azapi_resource.lock[0].name == "lock-readonly" && azapi_resource.lock[0].type == var.resource_types.authorization_locks
+    error_message = "An unnamed lock must receive a name derived from its kind and use the overridden API version."
+  }
+
+  assert {
+    condition     = azapi_resource.role_assignments["by_id"].type == var.resource_types.authorization_role_assignments
+    error_message = "Role assignments must use the overridden API version."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
+  }
+}
+
+run "invalid_lock_kind" {
+  command = plan
+
+  variables {
+    lock = {
+      kind = "Delete"
+    }
+  }
+
+  expect_failures = [var.lock]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
+}
+
+run "invalid_delegated_managed_identity" {
+  command = plan
+
+  variables {
+    role_assignments = {
+      invalid = {
+        role_definition_id_or_name             = "Reader"
+        principal_id                           = "22222222-2222-2222-2222-222222222222"
+        delegated_managed_identity_resource_id = "/subscriptions/00000000-0000-0000-0000-000000000000/resourceGroups/rg-test"
+      }
+    }
+  }
+
+  expect_failures = [var.role_assignments]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
+}
+
+run "empty_ignored_body_path" {
+  command = plan
+
+  variables {
+    ignore_body_changes = {
+      authorization_locks = [" "]
+    }
+  }
+
+  expect_failures = [var.ignore_body_changes]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "invalid_parent_id" {
@@ -334,6 +535,10 @@ run "invalid_parent_id" {
   }
 
   expect_failures = [var.parent_id]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "missing_primary_node" {
@@ -344,6 +549,10 @@ run "missing_primary_node" {
   }
 
   expect_failures = [var.node_types]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "invalid_node_ports" {
@@ -362,6 +571,10 @@ run "invalid_node_ports" {
   }
 
   expect_failures = [var.node_types]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "insufficient_primary_instances" {
@@ -378,6 +591,10 @@ run "insufficient_primary_instances" {
   }
 
   expect_failures = [var.reliability_level]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "multiple_primary_nodes" {
@@ -399,6 +616,10 @@ run "multiple_primary_nodes" {
   }
 
   expect_failures = [var.node_types]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "missing_server_certificate" {
@@ -409,6 +630,10 @@ run "missing_server_certificate" {
   }
 
   expect_failures = [var.certificate]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "conflicting_server_certificates" {
@@ -424,6 +649,10 @@ run "conflicting_server_certificates" {
   }
 
   expect_failures = [var.certificate]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "manual_upgrade_requires_version" {
@@ -434,6 +663,10 @@ run "manual_upgrade_requires_version" {
   }
 
   expect_failures = [var.cluster_code_version]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "multi_zone_requires_upgrade_mode" {
@@ -451,6 +684,10 @@ run "multi_zone_requires_upgrade_mode" {
   }
 
   expect_failures = [var.vmss_zonal_upgrade_mode]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "conflicting_reverse_proxy_certificates" {
@@ -469,6 +706,10 @@ run "conflicting_reverse_proxy_certificates" {
   }
 
   expect_failures = [var.reverse_proxy_certificate]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "empty_reverse_proxy_common_names" {
@@ -481,6 +722,10 @@ run "empty_reverse_proxy_common_names" {
   }
 
   expect_failures = [var.reverse_proxy_certificate_common_names]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "invalid_upgrade_duration_format" {
@@ -493,6 +738,10 @@ run "invalid_upgrade_duration_format" {
   }
 
   expect_failures = [var.upgrade_policy]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "invalid_upgrade_duration_components" {
@@ -505,6 +754,10 @@ run "invalid_upgrade_duration_components" {
   }
 
   expect_failures = [var.upgrade_policy]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "invalid_upgrade_health_percentage" {
@@ -519,6 +772,10 @@ run "invalid_upgrade_health_percentage" {
   }
 
   expect_failures = [var.upgrade_policy]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
 
 run "invalid_upgrade_delta_percentage" {
@@ -534,4 +791,8 @@ run "invalid_upgrade_delta_percentage" {
   }
 
   expect_failures = [var.upgrade_policy]
+  providers = {
+    azapi  = azapi
+    random = random
+  }
 }
