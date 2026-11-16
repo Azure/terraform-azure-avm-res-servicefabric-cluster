@@ -1,3 +1,5 @@
+mock_provider "random" {}
+
 mock_provider "azapi" {
   mock_resource "azapi_resource" {
     defaults = {

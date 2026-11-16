@@ -41,8 +41,9 @@ The implementation supports node types, server, client, and reverse-proxy certif
 Microsoft Entra authentication, runtime upgrade mode and version, reliability,
 custom fabric settings, add-on features, EventStore, zonal upgrade modes, and an
 existing diagnostics storage account, and cluster upgrade policies.
-Application resources and standard AVM extension-resource interfaces are not
-included in this implementation.
+The standard `lock` and `role_assignments` interfaces apply a management lock
+and Azure RBAC assignments to the cluster. Application resources and the
+remaining extension-resource interfaces are not included in this implementation.
 
 Terraform 1.11.0 or later and AzAPI 2.12 or later are required.
 API-version overrides are available through `resource_types`. An overridden API

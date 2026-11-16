@@ -43,8 +43,9 @@ The implementation supports node types, server, client, and reverse-proxy certif
 Microsoft Entra authentication, runtime upgrade mode and version, reliability,
 custom fabric settings, add-on features, EventStore, zonal upgrade modes, and an
 existing diagnostics storage account, and cluster upgrade policies.
-Application resources and standard AVM extension-resource interfaces are not
-included in this implementation.
+The standard `lock` and `role_assignments` interfaces apply a management lock
+and Azure RBAC assignments to the cluster. Application resources and the
+remaining extension-resource interfaces are not included in this implementation.
 
 Terraform 1.11.0 or later and AzAPI 2.12 or later are required.
 API-version overrides are available through `resource_types`. An overridden API
@@ -145,6 +146,8 @@ The following requirements are needed by this module:
 
 The following resources are used by this module:
 
+- [azapi_resource.lock](https://registry.terraform.io/providers/Azure/azapi/latest/docs/resources/resource) (resource)
+- [azapi_resource.role_assignments](https://registry.terraform.io/providers/Azure/azapi/latest/docs/resources/resource) (resource)
 - [azapi_resource.telemetry](https://registry.terraform.io/providers/Azure/azapi/latest/docs/resources/resource) (resource)
 - [azapi_resource.this](https://registry.terraform.io/providers/Azure/azapi/latest/docs/resources/resource) (resource)
 - [terraform_data.telemetry](https://registry.terraform.io/providers/hashicorp/terraform/latest/docs/resources/data) (resource)
@@ -387,17 +390,41 @@ Default: `{}`
 
 Description: Body-relative paths to ignore, using dot notation. Changes take effect only after apply. Ignored configuration is not sent to Azure until the path is removed.
 
+- `authorization_locks` - Paths ignored on the management lock.
+- `authorization_role_assignments` - Paths ignored on every role assignment.
 - `servicefabric_clusters` - Paths ignored on the Service Fabric cluster.
 
 Type:
 
 ```hcl
 object({
-    servicefabric_clusters = optional(list(string), [])
+    authorization_locks            = optional(list(string), [])
+    authorization_role_assignments = optional(list(string), [])
+    servicefabric_clusters         = optional(list(string), [])
   })
 ```
 
 Default: `{}`
+
+### <a name="input_lock"></a> [lock](#input\_lock)
+
+Description: Controls the Resource Lock configuration for this resource. The following properties can be specified:
+
+- `kind` - (Required) The type of lock. Possible values are `\"CanNotDelete\"` and `\"ReadOnly\"`.
+- `name` - (Optional) The name of the lock. If not specified, a name will be generated based on the `kind` value. Changing this forces the creation of a new resource.
+- `notes` - (Optional) Notes about the lock. This value maps to `Microsoft.Authorization/locks.properties.notes`.
+
+Type:
+
+```hcl
+object({
+    kind  = string
+    name  = optional(string, null)
+    notes = optional(string, null)
+  })
+```
+
+Default: `null`
 
 ### <a name="input_reliability_level"></a> [reliability\_level](#input\_reliability\_level)
 
@@ -411,13 +438,17 @@ Default: `"Silver"`
 
 Description: AzAPI resource types and API versions used by this module.
 
+- `authorization_locks` - Resource type and API version for the management lock.
+- `authorization_role_assignments` - Resource type and API version for role assignments.
 - `servicefabric_clusters` - Resource type and API version for the Service Fabric cluster.
 
 Type:
 
 ```hcl
 object({
-    servicefabric_clusters = optional(string, "Microsoft.ServiceFabric/clusters@2021-06-01")
+    authorization_locks            = optional(string, "Microsoft.Authorization/locks@2020-05-01")
+    authorization_role_assignments = optional(string, "Microsoft.Authorization/roleAssignments@2022-04-01")
+    servicefabric_clusters         = optional(string, "Microsoft.ServiceFabric/clusters@2021-06-01")
   })
 ```
 
@@ -483,6 +514,40 @@ object({
 ```
 
 Default: `null`
+
+### <a name="input_role_assignments"></a> [role\_assignments](#input\_role\_assignments)
+
+Description: A map of role assignments to create on the Service Fabric cluster. The map key is deliberately arbitrary to avoid issues where map keys maybe unknown at plan time.
+
+- `name` - (Optional) The name of the role assignment. If not set, a random UUID will be generated. Changing this forces the creation of a new resource.
+- `role_definition_id_or_name` - The ID or name of the role definition to assign to the principal.
+- `principal_id` - The ID of the principal to assign the role to.
+- `description` - (Optional) The description of the role assignment.
+- `skip_service_principal_aad_check` - (Optional) If set to true, skips the Azure Active Directory check for the service principal in the tenant. Defaults to false.
+- `condition` - (Optional) The condition which will be used to scope the role assignment.
+- `condition_version` - (Optional) The version of the condition syntax. Leave as `null` if you are not using a condition, if you are then valid values are '2.0'.
+- `delegated_managed_identity_resource_id` - (Optional) The delegated Azure Resource Id which contains a Managed Identity. Changing this forces a new resource to be created. This field is only used in cross-tenant scenario.
+- `principal_type` - (Optional) The type of the `principal_id`. Possible values are `User`, `Group` and `ServicePrincipal`. It is necessary to explicitly set this attribute when creating role assignments if the principal creating the assignment is constrained by ABAC rules that filters on the PrincipalType attribute.
+
+> Note: only set `skip_service_principal_aad_check` to true if you are assigning a role to a service principal.
+
+Type:
+
+```hcl
+map(object({
+    name                                   = optional(string, null)
+    role_definition_id_or_name             = string
+    principal_id                           = string
+    description                            = optional(string, null)
+    skip_service_principal_aad_check       = optional(bool, false)
+    condition                              = optional(string, null)
+    condition_version                      = optional(string, null)
+    delegated_managed_identity_resource_id = optional(string, null)
+    principal_type                         = optional(string, null)
+  }))
+```
+
+Default: `{}`
 
 ### <a name="input_sf_zonal_upgrade_mode"></a> [sf\_zonal\_upgrade\_mode](#input\_sf\_zonal\_upgrade\_mode)
 
@@ -616,7 +681,13 @@ Description: The resource ID of the Service Fabric cluster.
 
 ## Modules
 
-No modules.
+The following Modules are called:
+
+### <a name="module_avm_interfaces"></a> [avm\_interfaces](#module\_avm\_interfaces)
+
+Source: Azure/avm-utl-interfaces/azure
+
+Version: 0.10.0
 
 <!-- markdownlint-disable-next-line MD041 -->
 ## Data Collection

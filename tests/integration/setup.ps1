@@ -225,6 +225,30 @@ function New-IntegrationMaterial {
     }
 }
 
+function Initialize-TestModuleDirectory {
+    <#
+    .SYNOPSIS
+        Pre-create the parent directory Terraform needs for remote modules in test runs.
+    .DESCRIPTION
+        Terraform copies an already installed remote package into a test-run module with
+        a non-recursive mkdir. Test-run module keys contain the test file path, so their
+        parent directory must exist before terraform init.
+    #>
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)]
+        [string]$ModuleRoot,
+
+        [Parameter(Mandatory)]
+        [string]$TestPath
+    )
+
+    if (-not (Test-Path -LiteralPath (Join-Path $ModuleRoot 'terraform.tf'))) {
+        return
+    }
+    New-Item -ItemType Directory -Force -Path (Join-Path $ModuleRoot ".terraform/modules/test.$TestPath") | Out-Null
+}
+
 if ($MyInvocation.InvocationName -ne '.') {
     try {
         $OutputDirectory = Join-Path $PSScriptRoot '.generated'
@@ -232,6 +256,7 @@ if ($MyInvocation.InvocationName -ne '.') {
             Remove-IntegrationMaterial -OutputDirectory $OutputDirectory
         }
         else {
+            Initialize-TestModuleDirectory -ModuleRoot (Join-Path $PSScriptRoot '../..') -TestPath 'tests/integration'
             $ManagementSourcePrefix = Get-IntegrationManagementSourcePrefix -ManagementSourcePrefix $env:AVM_INTEGRATION_MANAGEMENT_CIDR
             $Location = if ([string]::IsNullOrWhiteSpace($env:AVM_INTEGRATION_LOCATION)) { 'westus3' } else { $env:AVM_INTEGRATION_LOCATION }
             $VmSku = if ([string]::IsNullOrWhiteSpace($env:AVM_INTEGRATION_VM_SKU)) { 'Standard_D2s_v5' } else { $env:AVM_INTEGRATION_VM_SKU }

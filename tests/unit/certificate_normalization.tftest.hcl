@@ -1,3 +1,5 @@
+mock_provider "random" {}
+
 mock_provider "azapi" {
   mock_resource "azapi_resource" {
     defaults = {
@@ -59,5 +61,9 @@ run "normalizes_issuer_thumbprints" {
       azapi_resource.this.body.properties.reverseProxyCertificateCommonNames.commonNames[0].certificateIssuerThumbprint == "abcdef0123456789abcdef0123456789abcdef01"
     )
     error_message = "All issuer thumbprint surfaces must use Azure's lowercase canonical representation."
+  }
+  providers = {
+    azapi  = azapi
+    random = random
   }
 }
